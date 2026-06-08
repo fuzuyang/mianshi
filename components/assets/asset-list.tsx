@@ -7,12 +7,14 @@ export function AssetList({
   assets,
   selectedAssetId,
   isLoading,
+  emptyLabel = "暂无知识资产",
   onSelect,
   onDelete,
 }: {
   assets: KnowledgeAsset[];
   selectedAssetId: string | null;
   isLoading: boolean;
+  emptyLabel?: string;
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
 }) {
@@ -21,7 +23,7 @@ export function AssetList({
   }
 
   if (assets.length === 0) {
-    return <EmptyState>暂无知识资产</EmptyState>;
+    return <EmptyState>{emptyLabel}</EmptyState>;
   }
 
   return (

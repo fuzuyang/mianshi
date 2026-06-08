@@ -87,9 +87,18 @@ export default function Home() {
     };
   }, []);
 
-  const selectedAsset = useMemo(
-    () => assets.find((asset) => asset.id === selectedAssetId) ?? assets[0] ?? null,
-    [assets, selectedAssetId],
+  const visibleAssets = useMemo(() => {
+    if (!lastSearchQuery) return assets;
+
+    const assetsById = new Map(assets.map((asset) => [asset.id, asset]));
+    return searchResults
+      .map((result) => assetsById.get(result.assetId))
+      .filter((asset): asset is KnowledgeAsset => Boolean(asset));
+  }, [assets, lastSearchQuery, searchResults]);
+
+  const visibleSelectedAsset = useMemo(
+    () => visibleAssets.find((asset) => asset.id === selectedAssetId) ?? visibleAssets[0] ?? null,
+    [visibleAssets, selectedAssetId],
   );
 
   const tagCount = useMemo(() => new Set(assets.flatMap((asset) => asset.tags)).size, [assets]);
@@ -106,6 +115,13 @@ export default function Home() {
     });
     setLastSearchQuery(data.query);
     setSearchResults(data.results);
+    setSelectedAssetId((current) => {
+      if (!data.query) return current;
+      if (data.results.length === 0) return null;
+
+      const resultIds = new Set(data.results.map((result) => result.assetId));
+      return current && resultIds.has(current) ? current : data.results[0].assetId;
+    });
     return data;
   }
 
@@ -258,9 +274,10 @@ export default function Home() {
             onSubmit={handleSearch}
           />
           <AssetPanel
-            assets={assets}
-            selectedAsset={selectedAsset}
+            assets={visibleAssets}
+            selectedAsset={visibleSelectedAsset}
             isLoading={isLoadingAssets}
+            activeQuery={lastSearchQuery}
             onSelect={setSelectedAssetId}
             onDelete={handleDeleteAsset}
           />

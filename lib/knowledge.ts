@@ -178,7 +178,7 @@ export function searchAssets(assets: KnowledgeAsset[], query: string, limit = 3)
   const positiveResults = ranked.filter((result) => result.score > 0);
   if (positiveResults.length === 0) return [];
 
-  return ranked.slice(0, limit);
+  return positiveResults.slice(0, limit);
 }
 
 export function makeAnswer(
