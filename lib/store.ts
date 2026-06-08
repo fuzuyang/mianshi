@@ -69,7 +69,9 @@ function insertAsset(database: Database.Database, asset: KnowledgeAsset) {
 }
 
 function seedIfEmpty(database: Database.Database) {
-  const count = database.prepare("SELECT COUNT(*) as count FROM assets").get() as { count: number };
+  const count = database
+    .prepare("SELECT COUNT(*) as count FROM assets")
+    .get() as { count: number };
   if (count.count > 0) return;
 
   const seed = database.transaction(() => {
@@ -97,6 +99,7 @@ export async function createAsset(input: {
   content: string;
   tags: string[];
 }) {
+  const database = getDb();
   const asset: KnowledgeAsset = {
     id: randomUUID(),
     title: input.title,
@@ -105,13 +108,22 @@ export async function createAsset(input: {
     createdAt: new Date().toISOString().slice(0, 10),
   };
 
-  insertAsset(getDb(), asset);
+  const insert = database.transaction(() => {
+    insertAsset(database, asset);
+  });
+  insert();
+  database.exec("PRAGMA wal_checkpoint(TRUNCATE);");
 
   return { asset, assets: await readAssets() };
 }
 
 export async function deleteAsset(assetId: string) {
-  getDb().prepare("DELETE FROM assets WHERE id = ?").run(assetId);
+  const database = getDb();
+  const remove = database.transaction(() => {
+    database.prepare("DELETE FROM assets WHERE id = ?").run(assetId);
+  });
+  remove();
+  database.exec("PRAGMA wal_checkpoint(TRUNCATE);");
   return readAssets();
 }
 
