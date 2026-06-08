@@ -45,6 +45,16 @@ npm run build
 - 覆盖新增表单错误、检索空状态、回答 loading 状态。
 - 使用克制的工作台式 UI，适合 ToB 知识资产场景。
 
+## 前端组件结构
+
+- `components/ui`：通用展示组件，如空状态、错误提示、区块标题、加载行。
+- `components/layout`：页面顶部与全局布局组件。
+- `components/metrics`：统计指标组件。
+- `components/assets`：知识资产列表、资产卡片、新增资产表单。
+- `components/search`：检索输入和相关片段结果。
+- `components/answer`：问答区域和引用来源。
+- `components/trace`：检索过程展示。
+
 ## API 设计
 
 - `GET /api/assets`：返回知识资产列表。
