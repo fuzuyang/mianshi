@@ -1,46 +1,95 @@
-import { promises as fs } from "node:fs";
+import Database from "better-sqlite3";
+import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { KnowledgeAsset, initialAssets } from "@/lib/knowledge";
 
+type AssetRow = {
+  id: string;
+  title: string;
+  content: string;
+  tags_json: string;
+  created_at: string;
+};
+
 const dataDirectory = path.join(process.cwd(), "data");
-const assetFile = path.join(dataDirectory, "assets.json");
+const databasePath = path.join(dataDirectory, "knowledge.db");
 
-let writeQueue = Promise.resolve();
+let db: Database.Database | null = null;
 
-async function ensureStore() {
-  await fs.mkdir(dataDirectory, { recursive: true });
+function rowToAsset(row: AssetRow): KnowledgeAsset {
+  return {
+    id: row.id,
+    title: row.title,
+    content: row.content,
+    tags: JSON.parse(row.tags_json) as string[],
+    createdAt: row.created_at,
+  };
+}
 
-  try {
-    await fs.access(assetFile);
-  } catch {
-    await fs.writeFile(assetFile, JSON.stringify(initialAssets, null, 2), "utf8");
-  }
+function getDb() {
+  if (db) return db;
+
+  mkdirSync(dataDirectory, { recursive: true });
+  db = new Database(databasePath);
+  db.pragma("journal_mode = WAL");
+  db.pragma("foreign_keys = ON");
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS assets (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      content TEXT NOT NULL,
+      tags_json TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_assets_created_at ON assets(created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_assets_title ON assets(title);
+  `);
+
+  seedIfEmpty(db);
+  return db;
+}
+
+function insertAssetStatement(database: Database.Database) {
+  return database.prepare(`
+    INSERT INTO assets (id, title, content, tags_json, created_at)
+    VALUES (@id, @title, @content, @tagsJson, @createdAt)
+  `);
+}
+
+function insertAsset(database: Database.Database, asset: KnowledgeAsset) {
+  insertAssetStatement(database).run({
+    id: asset.id,
+    title: asset.title,
+    content: asset.content,
+    tagsJson: JSON.stringify(asset.tags),
+    createdAt: asset.createdAt,
+  });
+}
+
+function seedIfEmpty(database: Database.Database) {
+  const count = database.prepare("SELECT COUNT(*) as count FROM assets").get() as { count: number };
+  if (count.count > 0) return;
+
+  const seed = database.transaction(() => {
+    initialAssets.forEach((asset) => insertAsset(database, asset));
+  });
+  seed();
 }
 
 export async function readAssets(): Promise<KnowledgeAsset[]> {
-  await ensureStore();
+  const rows = getDb()
+    .prepare(
+      `
+      SELECT id, title, content, tags_json, created_at
+      FROM assets
+      ORDER BY created_at DESC, rowid DESC
+    `,
+    )
+    .all() as AssetRow[];
 
-  try {
-    const content = await fs.readFile(assetFile, "utf8");
-    const parsed = JSON.parse(content) as KnowledgeAsset[];
-    if (!Array.isArray(parsed)) {
-      throw new Error("Asset store is not an array");
-    }
-    return parsed;
-  } catch {
-    await writeAssets(initialAssets);
-    return initialAssets;
-  }
-}
-
-export async function writeAssets(assets: KnowledgeAsset[]) {
-  writeQueue = writeQueue.then(async () => {
-    await ensureStore();
-    await fs.writeFile(assetFile, JSON.stringify(assets, null, 2), "utf8");
-  });
-
-  await writeQueue;
+  return rows.map(rowToAsset);
 }
 
 export async function createAsset(input: {
@@ -56,22 +105,23 @@ export async function createAsset(input: {
     createdAt: new Date().toISOString().slice(0, 10),
   };
 
-  const assets = await readAssets();
-  const nextAssets = [asset, ...assets];
-  await writeAssets(nextAssets);
+  insertAsset(getDb(), asset);
 
-  return { asset, assets: nextAssets };
+  return { asset, assets: await readAssets() };
 }
 
 export async function deleteAsset(assetId: string) {
-  const assets = await readAssets();
-  const nextAssets = assets.filter((asset) => asset.id !== assetId);
-  await writeAssets(nextAssets);
-  return nextAssets;
+  getDb().prepare("DELETE FROM assets WHERE id = ?").run(assetId);
+  return readAssets();
 }
 
 export async function resetAssets() {
-  const assets = [...initialAssets];
-  await writeAssets(assets);
-  return assets;
+  const database = getDb();
+  const reset = database.transaction(() => {
+    database.prepare("DELETE FROM assets").run();
+    initialAssets.forEach((asset) => insertAsset(database, asset));
+  });
+
+  reset();
+  return readAssets();
 }
